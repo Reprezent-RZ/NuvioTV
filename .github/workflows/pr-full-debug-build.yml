@@ -43,7 +43,15 @@ jobs:
           if [ -n "$LOCAL_DEV_PROPERTIES_BASE64" ]; then
             printf '%s' "$LOCAL_DEV_PROPERTIES_BASE64" | base64 --decode > local.dev.properties
           else
-            touch local.dev.properties
+            # Forks do not inherit Actions secrets from NuvioMedia/NuvioTV.
+            # These are the public client values embedded in the official Nuvio APK,
+            # used only as a fallback so account/QR sign-in also works in fork builds.
+            cat > local.dev.properties <<'EOF'
+          NUVIO_SUPABASE_URL=https://api.nuvio.tv
+          NUVIO_SUPABASE_FALLBACK_URL=https://api-two.nuvioapp.space
+          NUVIO_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzgxNTIxMzQ2LCJleHAiOjE5MzkyMDEzNDZ9.tmQaj682pwzehpqlgCDMnySOqiUvpgRbrE43T4VJpDI
+          TV_LOGIN_WEB_BASE_URL=https://nuvio.tv/tv-login
+          EOF
           fi
 
       - name: Prepare CI signing config
