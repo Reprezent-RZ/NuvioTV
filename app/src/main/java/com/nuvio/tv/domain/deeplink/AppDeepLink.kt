@@ -6,6 +6,11 @@ sealed interface AppDeepLink {
         val id: String
     ) : AppDeepLink
 
+    data class Folder(
+        val collectionId: String,
+        val folderId: String
+    ) : AppDeepLink
+
     data class AddonInstall(
         val manifestUrl: String
     ) : AppDeepLink

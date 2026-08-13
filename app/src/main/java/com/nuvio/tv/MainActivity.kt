@@ -704,6 +704,17 @@ class MainActivity : ComponentActivity() {
                                     launchSingleTop = true
                                 }
                             }
+                            is AppDeepLink.Folder -> {
+    pendingDeepLinkUrl.value = null
+    navController.navigate(
+        Screen.FolderDetail.createRoute(
+            collectionId = deepLink.collectionId,
+            folderId = deepLink.folderId
+        )
+    ) {
+        launchSingleTop = true
+    }
+}
                             is AppDeepLink.AddonInstall -> {
                                 navController.navigate(Screen.AddonManager.route) {
                                     launchSingleTop = true
