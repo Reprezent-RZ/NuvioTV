@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -18,6 +19,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.tv.material3.Button
 import androidx.tv.material3.Text
+import com.nuvio.tv.R
 import com.nuvio.tv.core.sync.androidtv.AndroidTvChannelManager
 import com.nuvio.tv.core.sync.androidtv.TvChannelPreferences
 import com.nuvio.tv.domain.model.catalogRowStableKey
@@ -143,10 +145,8 @@ fun TvHomeCatalogSettingsSection(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text("Android TV Home")
-        Text(
-            "Vyber katalógy addonov, ktoré sa majú zobraziť ako samostatné riadky na domovskej obrazovke TV."
-        )
+        Text(stringResource(R.string.tv_home_catalogs_title))
+        Text(stringResource(R.string.tv_home_catalogs_description))
 
         LazyRow(
             contentPadding = PaddingValues(end = 12.dp),
