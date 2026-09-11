@@ -81,7 +81,8 @@ data class FolderDetailUiState(
     val posterCardCornerRadiusDp: Int = 12,
     val tabs: List<FolderTab> = emptyList(),
     val selectedTabIndex: Int = 0,
-    val selectedGroupIndex: Int = 0,
+    val collectionFolders: List<CollectionFolder> = emptyList(),
+    val selectedFolderIndex: Int = 0,
     val isLoading: Boolean = true,
     val followLayoutHomeState: HomeUiState? = null,
     val movieWatchedStatus: Map<String, Boolean> = emptyMap()
@@ -172,7 +173,7 @@ class FolderDetailViewModel @Inject constructor(
     private val _tabFocusStates = MutableStateFlow<Map<Int, FolderDetailGridFocusState>>(emptyMap())
     val tabFocusStates: StateFlow<Map<Int, FolderDetailGridFocusState>> = _tabFocusStates.asStateFlow()
 
-    private var requestedGroupIndex: Int = 0
+    private var requestedFolderIndex: Int? = null
     private var sourceGeneration: Int = 0
 
     init {
@@ -214,8 +215,7 @@ class FolderDetailViewModel @Inject constructor(
         get() {
             val state = _uiState.value
             val folder = state.folder ?: return false
-            val activeSources = folder.groups.getOrNull(state.selectedGroupIndex)?.sources ?: folder.sources
-            return state.tabs.firstOrNull()?.isAllTab == true && activeSources.size >= 2
+            return state.tabs.firstOrNull()?.isAllTab == true && folder.sources.size >= 2
         }
 
     private fun loadFolder() {
@@ -223,13 +223,24 @@ class FolderDetailViewModel @Inject constructor(
         viewModelScope.launch {
             val collections = collectionsDataStore.collections.first()
             val collection = collections.find { it.id == collectionId }
-            val folder = collection?.folders?.find { it.id == folderId }
+            val collectionFolders = collection?.folders.orEmpty()
+            val routeFolderIndex = collectionFolders.indexOfFirst { it.id == folderId }
+                .takeIf { it >= 0 } ?: 0
+            val activeFolderIndex = if (collectionFolders.isEmpty()) {
+                0
+            } else {
+                (requestedFolderIndex ?: routeFolderIndex).coerceIn(collectionFolders.indices)
+            }
+            requestedFolderIndex = activeFolderIndex
+            val folder = collectionFolders.getOrNull(activeFolderIndex)
 
-            if (folder == null || (folder.sources.isEmpty() && folder.groups.isEmpty())) {
+            if (folder == null || folder.sources.isEmpty()) {
                 _uiState.update {
                     it.copy(
                         folder = folder,
                         collectionTitle = collection?.title ?: "",
+                        collectionFolders = collectionFolders,
+                        selectedFolderIndex = activeFolderIndex,
                         viewMode = collection?.viewMode ?: FolderViewMode.TABBED_GRID,
                         isLoading = false
                     )
@@ -237,13 +248,7 @@ class FolderDetailViewModel @Inject constructor(
                 return@launch
             }
 
-            val activeGroupIndex = if (folder.groups.isEmpty()) {
-                0
-            } else {
-                requestedGroupIndex.coerceIn(folder.groups.indices)
-            }
-            requestedGroupIndex = activeGroupIndex
-            val activeSources = folder.groups.getOrNull(activeGroupIndex)?.sources ?: folder.sources
+            val activeSources = folder.sources
 
             val addons = addonRepository.getInstalledAddons().first().enabledAddons()
             val homeLayout = layoutPreferenceDataStore.selectedLayout.first()
@@ -368,7 +373,8 @@ class FolderDetailViewModel @Inject constructor(
                     posterCardCornerRadiusDp = posterCardCornerRadiusDp,
                     tabs = tabs,
                     selectedTabIndex = 0,
-                    selectedGroupIndex = activeGroupIndex,
+                    collectionFolders = collectionFolders,
+                    selectedFolderIndex = activeFolderIndex,
                     isLoading = false
                 )
             }
@@ -842,23 +848,23 @@ class FolderDetailViewModel @Inject constructor(
         if (tabIndex >= 0) loadMoreItems(tabIndex)
     }
 
-    fun selectGroup(index: Int) {
+    fun selectCollectionFolder(index: Int) {
         val state = _uiState.value
-        val folder = state.folder ?: return
-        if (folder.groups.isEmpty()) return
-        val normalized = index.coerceIn(folder.groups.indices)
-        if (normalized == state.selectedGroupIndex && state.tabs.isNotEmpty()) return
+        if (state.collectionFolders.isEmpty()) return
+        val normalized = index.coerceIn(state.collectionFolders.indices)
+        if (normalized == state.selectedFolderIndex && state.tabs.isNotEmpty()) return
 
-        requestedGroupIndex = normalized
+        requestedFolderIndex = normalized
         _rowsFocusState.value = com.nuvio.tv.ui.screens.home.HomeScreenFocusState()
         _followLayoutFocusState.value = com.nuvio.tv.ui.screens.home.HomeScreenFocusState()
         _tabFocusStates.value = emptyMap()
         _uiState.update {
             it.copy(
-                selectedGroupIndex = normalized,
+                selectedFolderIndex = normalized,
                 selectedTabIndex = 0,
                 tabs = emptyList(),
-                followLayoutHomeState = null
+                followLayoutHomeState = null,
+                isLoading = true
             )
         }
         loadFolder()

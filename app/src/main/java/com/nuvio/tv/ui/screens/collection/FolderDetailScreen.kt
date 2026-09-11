@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListPrefetchStrategy
 import androidx.compose.foundation.lazy.LazyListState
@@ -134,35 +135,22 @@ fun FolderDetailScreen(
     val trailerPreviewAudioUrls by viewModel.trailerPreviewAudioUrls.collectAsStateWithLifecycle()
     val scrollToTopTrigger by viewModel.scrollToTopTrigger.collectAsStateWithLifecycle()
 
-    if (uiState.viewMode == FolderViewMode.FOLLOW_LAYOUT) {
-        FollowLayoutContent(
-            uiState = uiState,
-            focusState = followLayoutFocusState,
-            enrichingItemId = enrichingItemId,
-            enrichedPreviews = enrichedPreviews,
-            failedEnrichmentIds = failedEnrichmentIds,
-            onNavigateToDetail = onNavigateToDetail,
-            onLoadMoreCatalog = viewModel::loadMoreForCatalog,
-            onSelectTab = viewModel::selectTab,
-            onLoadMoreForSelectedTab = { viewModel.loadMoreItems(viewModel.uiState.value.selectedTabIndex) },
-            onSaveFocusState = { vi, vo, rk, ikm, m, ri, ii ->
-                viewModel.saveFollowLayoutFocusState(vi, vo, rk, ikm, m, ri, ii)
-            },
-            onItemFocus = viewModel::onItemFocused,
-            onPreloadAdjacentItem = viewModel::preloadAdjacentItem,
-            onCatalogItemLongPress = { item, addonBaseUrl ->
-                viewModel.posterOptions.show(item, addonBaseUrl)
-            },
-            trailerPreviewUrls = trailerPreviewUrls,
-            trailerPreviewAudioUrls = trailerPreviewAudioUrls,
-            onRequestTrailerPreview = viewModel::requestTrailerPreview,
-            scrollToTopTrigger = scrollToTopTrigger
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = NuvioTheme.spacing.xl)
+    ) {
+        CollectionFolderTabs(
+            collectionTitle = uiState.collectionTitle,
+            folders = uiState.collectionFolders,
+            selectedFolderIndex = uiState.selectedFolderIndex,
+            onSelectFolder = viewModel::selectCollectionFolder
         )
-    } else {
-        Column(
+
+        Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(top = NuvioTheme.spacing.xl)
+                .fillMaxWidth()
+                .weight(1f)
         ) {
             when (uiState.viewMode) {
                 FolderViewMode.TABBED_GRID -> TabbedGridContent(
@@ -185,12 +173,9 @@ fun FolderDetailScreen(
                         viewModel.posterOptions.show(item, addonBaseUrl)
                     }
                 )
-                FolderViewMode.ROWS -> {
-                    FolderHeader(
-                        folder = folder,
-                        selectedGroupIndex = uiState.selectedGroupIndex,
-                        onSelectGroup = viewModel::selectGroup
-                    )
+
+                FolderViewMode.ROWS -> Column(modifier = Modifier.fillMaxSize()) {
+                    FolderHeader(folder = folder)
                     RowsContent(
                         uiState = uiState,
                         focusState = rowsFocusState,
@@ -206,7 +191,30 @@ fun FolderDetailScreen(
                         }
                     )
                 }
-                FolderViewMode.FOLLOW_LAYOUT -> {} // handled above
+
+                FolderViewMode.FOLLOW_LAYOUT -> FollowLayoutContent(
+                    uiState = uiState,
+                    focusState = followLayoutFocusState,
+                    enrichingItemId = enrichingItemId,
+                    enrichedPreviews = enrichedPreviews,
+                    failedEnrichmentIds = failedEnrichmentIds,
+                    onNavigateToDetail = onNavigateToDetail,
+                    onLoadMoreCatalog = viewModel::loadMoreForCatalog,
+                    onSelectTab = viewModel::selectTab,
+                    onLoadMoreForSelectedTab = { viewModel.loadMoreItems(viewModel.uiState.value.selectedTabIndex) },
+                    onSaveFocusState = { vi, vo, rk, ikm, m, ri, ii ->
+                        viewModel.saveFollowLayoutFocusState(vi, vo, rk, ikm, m, ri, ii)
+                    },
+                    onItemFocus = viewModel::onItemFocused,
+                    onPreloadAdjacentItem = viewModel::preloadAdjacentItem,
+                    onCatalogItemLongPress = { item, addonBaseUrl ->
+                        viewModel.posterOptions.show(item, addonBaseUrl)
+                    },
+                    trailerPreviewUrls = trailerPreviewUrls,
+                    trailerPreviewAudioUrls = trailerPreviewAudioUrls,
+                    onRequestTrailerPreview = viewModel::requestTrailerPreview,
+                    scrollToTopTrigger = scrollToTopTrigger
+                )
             }
         }
     }
@@ -222,67 +230,42 @@ fun FolderDetailScreen(
 }
 
 @Composable
-private fun FolderHeader(
-    folder: com.nuvio.tv.domain.model.CollectionFolder,
-    selectedGroupIndex: Int = 0,
-    onSelectGroup: (Int) -> Unit = {}
+private fun CollectionFolderTabs(
+    collectionTitle: String,
+    folders: List<com.nuvio.tv.domain.model.CollectionFolder>,
+    selectedFolderIndex: Int,
+    onSelectFolder: (Int) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = NuvioTheme.spacing.xxxl, vertical = NuvioTheme.spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.lg)
-        ) {
-            if (!folder.coverImageUrl.isNullOrBlank()) {
-                val iconWidth: androidx.compose.ui.unit.Dp
-                val iconHeight: androidx.compose.ui.unit.Dp
-                when (folder.tileShape) {
-                    com.nuvio.tv.domain.model.PosterShape.POSTER -> { iconWidth = NuvioTheme.spacing.xxl; iconHeight = NuvioTheme.spacing.xxxl }
-                    com.nuvio.tv.domain.model.PosterShape.LANDSCAPE -> { iconWidth = 64.dp; iconHeight = 36.dp }
-                    com.nuvio.tv.domain.model.PosterShape.SQUARE -> { iconWidth = NuvioTheme.spacing.xxxl; iconHeight = NuvioTheme.spacing.xxxl }
-                }
-                AsyncImage(
-                    model = folder.coverImageUrl,
-                    contentDescription = folder.title,
-                    modifier = Modifier
-                        .width(iconWidth)
-                        .height(iconHeight)
-                        .clip(RoundedCornerShape(NuvioTheme.radii.sm)),
-                    contentScale = ContentScale.FillBounds
-                )
-            } else if (!folder.coverEmoji.isNullOrBlank()) {
-                Text(
-                    text = folder.coverEmoji,
-                    style = MaterialTheme.typography.headlineLarge
-                )
-            }
-            Text(
-                text = folder.title,
-                style = MaterialTheme.typography.headlineMedium,
-                color = NuvioTheme.colors.TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+        Text(
+            text = collectionTitle,
+            style = MaterialTheme.typography.headlineMedium,
+            color = NuvioTheme.colors.TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(
+                start = NuvioTheme.spacing.xxxl,
+                end = NuvioTheme.spacing.xxxl,
+                bottom = NuvioTheme.spacing.sm
             )
-        }
+        )
 
-        if (folder.groups.size > 1) {
-            val safeSelected = selectedGroupIndex.coerceIn(folder.groups.indices)
+        if (folders.size > 1) {
+            val safeSelected = selectedFolderIndex.coerceIn(folders.indices)
             TabRow(
                 selectedTabIndex = safeSelected,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = NuvioTheme.spacing.xxxl)
             ) {
-                folder.groups.forEachIndexed { index, group ->
+                folders.forEachIndexed { index, collectionFolder ->
                     Tab(
                         selected = index == safeSelected,
-                        onFocus = { onSelectGroup(index) },
-                        onClick = { onSelectGroup(index) }
+                        onFocus = { onSelectFolder(index) },
+                        onClick = { onSelectFolder(index) }
                     ) {
                         Text(
-                            text = group.title,
+                            text = collectionFolder.title,
                             style = MaterialTheme.typography.labelLarge,
                             modifier = Modifier.padding(
                                 horizontal = NuvioTheme.spacing.xl,
@@ -294,6 +277,50 @@ private fun FolderHeader(
             }
             Spacer(modifier = Modifier.height(NuvioTheme.spacing.sm))
         }
+    }
+}
+
+@Composable
+private fun FolderHeader(
+    folder: com.nuvio.tv.domain.model.CollectionFolder
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = NuvioTheme.spacing.xxxl, vertical = NuvioTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.lg)
+    ) {
+        if (!folder.coverImageUrl.isNullOrBlank()) {
+            val iconWidth: androidx.compose.ui.unit.Dp
+            val iconHeight: androidx.compose.ui.unit.Dp
+            when (folder.tileShape) {
+                com.nuvio.tv.domain.model.PosterShape.POSTER -> { iconWidth = NuvioTheme.spacing.xxl; iconHeight = NuvioTheme.spacing.xxxl }
+                com.nuvio.tv.domain.model.PosterShape.LANDSCAPE -> { iconWidth = 64.dp; iconHeight = 36.dp }
+                com.nuvio.tv.domain.model.PosterShape.SQUARE -> { iconWidth = NuvioTheme.spacing.xxxl; iconHeight = NuvioTheme.spacing.xxxl }
+            }
+            AsyncImage(
+                model = folder.coverImageUrl,
+                contentDescription = folder.title,
+                modifier = Modifier
+                    .width(iconWidth)
+                    .height(iconHeight)
+                    .clip(RoundedCornerShape(NuvioTheme.radii.sm)),
+                contentScale = ContentScale.FillBounds
+            )
+        } else if (!folder.coverEmoji.isNullOrBlank()) {
+            Text(
+                text = folder.coverEmoji,
+                style = MaterialTheme.typography.headlineLarge
+            )
+        }
+        Text(
+            text = folder.title,
+            style = MaterialTheme.typography.headlineMedium,
+            color = NuvioTheme.colors.TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

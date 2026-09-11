@@ -42,6 +42,18 @@ private data class CatalogUpdateResult(
     val fullRows: List<CatalogRow>
 )
 
+private fun Collection.asHomeCollectionCard(): Collection {
+    val firstFolder = folders.firstOrNull() ?: return this
+    return copy(
+        folders = listOf(
+            firstFolder.copy(
+                title = title,
+                hideTitle = false
+            )
+        )
+    )
+}
+
 @OptIn(FlowPreview::class)
 internal fun HomeViewModel.observeCollectionsPipeline() {
     viewModelScope.launch {
@@ -723,7 +735,7 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
             collectionsCache.forEach { collection ->
                 val key = "collection_${collection.id}"
             if (collection.pinToTop && key !in disabledHomeCatalogKeys && addedCollectionIds.add(collection.id)) {
-                add(HomeRow.CollectionRow(collection))
+                add(HomeRow.CollectionRow(collection.asHomeCollectionCard()))
             }
         }
         for (key in orderedKeys) {
@@ -731,7 +743,7 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
             val collectionEntry = collectionsSnapshot[key]
             if (collectionEntry != null) {
                 if (!collectionEntry.pinToTop && addedCollectionIds.add(collectionEntry.id)) {
-                    add(HomeRow.CollectionRow(collectionEntry))
+                    add(HomeRow.CollectionRow(collectionEntry.asHomeCollectionCard()))
                 }
             } else {
                     val catalogRow = displayRowsByKey[key]
