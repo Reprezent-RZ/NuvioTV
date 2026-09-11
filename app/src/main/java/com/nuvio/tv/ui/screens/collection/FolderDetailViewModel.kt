@@ -81,6 +81,7 @@ data class FolderDetailUiState(
     val posterCardCornerRadiusDp: Int = 12,
     val tabs: List<FolderTab> = emptyList(),
     val selectedTabIndex: Int = 0,
+    val selectedGroupIndex: Int = 0,
     val isLoading: Boolean = true,
     val followLayoutHomeState: HomeUiState? = null,
     val movieWatchedStatus: Map<String, Boolean> = emptyMap()
@@ -171,6 +172,9 @@ class FolderDetailViewModel @Inject constructor(
     private val _tabFocusStates = MutableStateFlow<Map<Int, FolderDetailGridFocusState>>(emptyMap())
     val tabFocusStates: StateFlow<Map<Int, FolderDetailGridFocusState>> = _tabFocusStates.asStateFlow()
 
+    private var requestedGroupIndex: Int = 0
+    private var sourceGeneration: Int = 0
+
     init {
         posterOptions.bind(viewModelScope)
         loadFolder()
@@ -210,16 +214,18 @@ class FolderDetailViewModel @Inject constructor(
         get() {
             val state = _uiState.value
             val folder = state.folder ?: return false
-            return state.tabs.firstOrNull()?.isAllTab == true && folder.sources.size >= 2
+            val activeSources = folder.groups.getOrNull(state.selectedGroupIndex)?.sources ?: folder.sources
+            return state.tabs.firstOrNull()?.isAllTab == true && activeSources.size >= 2
         }
 
     private fun loadFolder() {
+        val generation = ++sourceGeneration
         viewModelScope.launch {
             val collections = collectionsDataStore.collections.first()
             val collection = collections.find { it.id == collectionId }
             val folder = collection?.folders?.find { it.id == folderId }
 
-            if (folder == null || folder.sources.isEmpty()) {
+            if (folder == null || (folder.sources.isEmpty() && folder.groups.isEmpty())) {
                 _uiState.update {
                     it.copy(
                         folder = folder,
@@ -230,6 +236,14 @@ class FolderDetailViewModel @Inject constructor(
                 }
                 return@launch
             }
+
+            val activeGroupIndex = if (folder.groups.isEmpty()) {
+                0
+            } else {
+                requestedGroupIndex.coerceIn(folder.groups.indices)
+            }
+            requestedGroupIndex = activeGroupIndex
+            val activeSources = folder.groups.getOrNull(activeGroupIndex)?.sources ?: folder.sources
 
             val addons = addonRepository.getInstalledAddons().first().enabledAddons()
             val homeLayout = layoutPreferenceDataStore.selectedLayout.first()
@@ -251,13 +265,15 @@ class FolderDetailViewModel @Inject constructor(
             val posterCardWidthDp = layoutPreferenceDataStore.posterCardWidthDp.first()
             val posterCardHeightDp = layoutPreferenceDataStore.posterCardHeightDp.first()
             val posterCardCornerRadiusDp = layoutPreferenceDataStore.posterCardCornerRadiusDp.first()
-            val showAll = (collection?.showAllTab ?: true) && folder.sources.size >= 2
+            val showAll = (collection?.showAllTab ?: true) && activeSources.size >= 2
 
             val viewMode = collection?.viewMode ?: FolderViewMode.TABBED_GRID
             val useShimmerPlaceholders = viewMode == FolderViewMode.FOLLOW_LAYOUT &&
                 (homeLayout == HomeLayout.MODERN || homeLayout == HomeLayout.CLASSIC)
 
-            val sourceTabs = folder.sources.map { source ->
+            if (generation != sourceGeneration) return@launch
+
+            val sourceTabs = activeSources.map { source ->
                 val (name, typeLabel, rawType) = when (source) {
                     is AddonCatalogCollectionSource -> {
                         val addon = addons.find { it.id == source.addonId }
@@ -351,6 +367,8 @@ class FolderDetailViewModel @Inject constructor(
                     posterCardHeightDp = posterCardHeightDp,
                     posterCardCornerRadiusDp = posterCardCornerRadiusDp,
                     tabs = tabs,
+                    selectedTabIndex = 0,
+                    selectedGroupIndex = activeGroupIndex,
                     isLoading = false
                 )
             }
@@ -361,8 +379,8 @@ class FolderDetailViewModel @Inject constructor(
             // Immediately build shimmer placeholders for FOLLOW_LAYOUT mode
             rebuildFollowLayoutState()
 
-            folder.sources.forEachIndexed { index, source ->
-                loadSourceForTab(index + tabOffset, source)
+            activeSources.forEachIndexed { index, source ->
+                loadSourceForTab(index + tabOffset, source, generation)
             }
         }
     }
@@ -621,15 +639,19 @@ class FolderDetailViewModel @Inject constructor(
         return result
     }
 
-    private fun loadSourceForTab(tabIndex: Int, source: CollectionSource) {
+    private fun loadSourceForTab(tabIndex: Int, source: CollectionSource, generation: Int) {
         when (source) {
-            is AddonCatalogCollectionSource -> loadAddonCatalogForTab(tabIndex, source)
-            is TmdbCollectionSource -> loadTmdbSourceForTab(tabIndex, source, page = 1, append = false)
-            is TraktCollectionSource -> loadTraktSourceForTab(tabIndex, source, page = 1, append = false)
+            is AddonCatalogCollectionSource -> loadAddonCatalogForTab(tabIndex, source, generation)
+            is TmdbCollectionSource -> loadTmdbSourceForTab(tabIndex, source, page = 1, append = false, generation = generation)
+            is TraktCollectionSource -> loadTraktSourceForTab(tabIndex, source, page = 1, append = false, generation = generation)
         }
     }
 
-    private fun loadAddonCatalogForTab(tabIndex: Int, source: AddonCatalogCollectionSource) {
+    private fun loadAddonCatalogForTab(
+        tabIndex: Int,
+        source: AddonCatalogCollectionSource,
+        generation: Int = sourceGeneration
+    ) {
         viewModelScope.launch {
             val addons = addonRepository.getInstalledAddons().first().enabledAddons()
             val addon = addons.find { it.id == source.addonId }
@@ -683,6 +705,7 @@ class FolderDetailViewModel @Inject constructor(
                 extraArgs = extraArgs,
                 supportsSkip = supportsSkip
             ).collect { result ->
+                if (generation != sourceGeneration) return@collect
                 when (result) {
                     is NetworkResult.Success -> {
                         _uiState.update { state ->
@@ -819,6 +842,28 @@ class FolderDetailViewModel @Inject constructor(
         if (tabIndex >= 0) loadMoreItems(tabIndex)
     }
 
+    fun selectGroup(index: Int) {
+        val state = _uiState.value
+        val folder = state.folder ?: return
+        if (folder.groups.isEmpty()) return
+        val normalized = index.coerceIn(folder.groups.indices)
+        if (normalized == state.selectedGroupIndex && state.tabs.isNotEmpty()) return
+
+        requestedGroupIndex = normalized
+        _rowsFocusState.value = com.nuvio.tv.ui.screens.home.HomeScreenFocusState()
+        _followLayoutFocusState.value = com.nuvio.tv.ui.screens.home.HomeScreenFocusState()
+        _tabFocusStates.value = emptyMap()
+        _uiState.update {
+            it.copy(
+                selectedGroupIndex = normalized,
+                selectedTabIndex = 0,
+                tabs = emptyList(),
+                followLayoutHomeState = null
+            )
+        }
+        loadFolder()
+    }
+
     fun selectTab(index: Int) {
         _uiState.update { it.copy(selectedTabIndex = index) }
     }
@@ -904,7 +949,7 @@ class FolderDetailViewModel @Inject constructor(
         }
     }
 
-    private fun loadTmdbSourceForTab(tabIndex: Int, source: TmdbCollectionSource, page: Int, append: Boolean) {
+    private fun loadTmdbSourceForTab(tabIndex: Int, source: TmdbCollectionSource, page: Int, append: Boolean, generation: Int = sourceGeneration) {
         if (append) {
             _uiState.update { s ->
                 val tabs = s.tabs.toMutableList()
@@ -917,6 +962,7 @@ class FolderDetailViewModel @Inject constructor(
         }
         viewModelScope.launch {
             tmdbCollectionSourceResolver.resolve(source, page).collect { result ->
+                if (generation != sourceGeneration) return@collect
                 when (result) {
                     is NetworkResult.Success -> {
                         _uiState.update { s ->
@@ -965,7 +1011,7 @@ class FolderDetailViewModel @Inject constructor(
         }
     }
 
-    private fun loadTraktSourceForTab(tabIndex: Int, source: TraktCollectionSource, page: Int, append: Boolean) {
+    private fun loadTraktSourceForTab(tabIndex: Int, source: TraktCollectionSource, page: Int, append: Boolean, generation: Int = sourceGeneration) {
         if (append) {
             _uiState.update { s ->
                 val tabs = s.tabs.toMutableList()
@@ -978,6 +1024,7 @@ class FolderDetailViewModel @Inject constructor(
         }
         viewModelScope.launch {
             traktPublicListSourceResolver.resolve(source, page).collect { result ->
+                if (generation != sourceGeneration) return@collect
                 when (result) {
                     is NetworkResult.Success -> {
                         _uiState.update { s ->

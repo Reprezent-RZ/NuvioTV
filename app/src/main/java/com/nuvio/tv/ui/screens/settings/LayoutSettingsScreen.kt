@@ -482,6 +482,8 @@ fun LayoutSettingsContent(
                         },
                         onFocused = { focusedSection = LayoutSettingsSection.HOME_CONTENT }
                     )
+                    TvHomeCatalogSettingsSection()
+
                     CompactToggleRow(
                         title = stringResource(R.string.layout_overall_ratings),
                         subtitle = stringResource(

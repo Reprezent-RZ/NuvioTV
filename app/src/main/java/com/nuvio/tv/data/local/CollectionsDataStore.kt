@@ -11,6 +11,7 @@ import com.nuvio.tv.domain.model.AddonCatalogCollectionSource
 import com.nuvio.tv.domain.model.Collection
 import com.nuvio.tv.domain.model.CollectionCatalogSource
 import com.nuvio.tv.domain.model.CollectionFolder
+import com.nuvio.tv.domain.model.CollectionFolderGroup
 import com.nuvio.tv.domain.model.CollectionSource
 import com.nuvio.tv.domain.model.FolderViewMode
 import com.nuvio.tv.domain.model.PosterShape
@@ -220,9 +221,17 @@ class CollectionsDataStore @Inject constructor(
         val hideTitle: Boolean = false,
         val sources: List<SerializableSource>? = null,
         val catalogSources: List<SerializableCatalogSource> = emptyList(),
+        val groups: List<SerializableGroup> = emptyList(),
         val heroBackdropUrl: String? = null,
         val heroVideoUrl: String? = null,
         val titleLogoUrl: String? = null
+    )
+
+    @androidx.annotation.Keep
+    private data class SerializableGroup(
+        val id: String,
+        val title: String,
+        val sources: List<SerializableSource> = emptyList()
     )
 
     @androidx.annotation.Keep
@@ -294,6 +303,13 @@ class CollectionsDataStore @Inject constructor(
                 heroVideoUrl = folder.heroVideoUrl,
                 titleLogoUrl = folder.titleLogoUrl,
                 sources = folder.sources.map { it.toSerializableSource() },
+                groups = folder.groups.map { group ->
+                    SerializableGroup(
+                        id = group.id,
+                        title = group.title,
+                        sources = group.sources.map { it.toSerializableSource() }
+                    )
+                },
                 catalogSources = folder.catalogSources.map { source ->
                     SerializableCatalogSource(
                         addonId = source.addonId,
@@ -385,7 +401,20 @@ class CollectionsDataStore @Inject constructor(
                             catalogId = source.catalogId,
                             genre = source.genre
                         )
+                    },
+                groups = folder.groups.mapNotNull { group ->
+                    val groupId = group.id.trim()
+                    val groupTitle = group.title.trim()
+                    if (groupId.isBlank() || groupTitle.isBlank()) {
+                        null
+                    } else {
+                        CollectionFolderGroup(
+                            id = groupId,
+                            title = groupTitle,
+                            sources = group.sources.mapNotNull { it.toDomainSource() }
+                        )
                     }
+                }
             )
         }
     )

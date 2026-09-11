@@ -45,7 +45,8 @@ class AndroidTvChannelSyncService @Inject constructor(
     private val cwEnrichmentCache: ContinueWatchingEnrichmentCache,
     private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
     private val traktSettingsDataStore: TraktSettingsDataStore,
-    private val tvRecommendationManager: TvRecommendationManager
+    private val tvRecommendationManager: TvRecommendationManager,
+    private val tvHomeChannelSyncService: AndroidTvHomeChannelSyncService
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -72,6 +73,7 @@ class AndroidTvChannelSyncService @Inject constructor(
             return
         }
         TvChannelRefreshJobService.schedulePeriodic(context)
+        tvHomeChannelSyncService.start()
 
         scope.launch {
             // Observe cache snapshot updates and settings changes to trigger reconciliation.
@@ -127,6 +129,11 @@ class AndroidTvChannelSyncService @Inject constructor(
 
         runCatching {
             tvRecommendationManager.updateWatchNext(channelItems)
+        }
+        runCatching {
+            tvHomeChannelSyncService.refreshNow()
+        }.onFailure {
+            Log.w(TAG, "TV Home catalog refresh failed", it)
         }
     }
 

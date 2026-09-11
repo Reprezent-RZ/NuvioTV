@@ -33,6 +33,7 @@ object DeepLinkParser {
                 if (type.isBlank() || id.isBlank()) null else AppDeepLink.Meta(type = type, id = id)
             }
             "imdb", "tmdb" -> parseProviderMetaDeepLink(host, pathSegments, parsedUrl)
+            "folder", "collection-folder" -> parseFolder(pathSegments)
             "auth" -> null
             else -> {
                 if (looksLikeAddonHost(host)) {
@@ -62,6 +63,17 @@ object DeepLinkParser {
         val type = normalizeMediaType(pathSegments[0])
         val id = normalizeId(pathSegments[1])
         return if (type.isBlank() || id.isBlank()) null else AppDeepLink.Meta(type = type, id = id)
+    }
+
+    private fun parseFolder(pathSegments: List<String>): AppDeepLink.Folder? {
+        if (pathSegments.size < 2) return null
+        val collectionId = pathSegments[0].trim()
+        val folderId = pathSegments[1].trim()
+        return if (collectionId.isBlank() || folderId.isBlank()) {
+            null
+        } else {
+            AppDeepLink.Folder(collectionId = collectionId, folderId = folderId)
+        }
     }
 
     private fun parseProviderMetaDeepLink(

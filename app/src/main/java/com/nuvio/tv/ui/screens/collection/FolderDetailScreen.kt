@@ -186,7 +186,11 @@ fun FolderDetailScreen(
                     }
                 )
                 FolderViewMode.ROWS -> {
-                    FolderHeader(folder = folder)
+                    FolderHeader(
+                        folder = folder,
+                        selectedGroupIndex = uiState.selectedGroupIndex,
+                        onSelectGroup = viewModel::selectGroup
+                    )
                     RowsContent(
                         uiState = uiState,
                         focusState = rowsFocusState,
@@ -218,44 +222,78 @@ fun FolderDetailScreen(
 }
 
 @Composable
-private fun FolderHeader(folder: com.nuvio.tv.domain.model.CollectionFolder) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = NuvioTheme.spacing.xxxl, vertical = NuvioTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.lg)
-    ) {
-        if (!folder.coverImageUrl.isNullOrBlank()) {
-            val iconWidth: androidx.compose.ui.unit.Dp
-            val iconHeight: androidx.compose.ui.unit.Dp
-            when (folder.tileShape) {
-                com.nuvio.tv.domain.model.PosterShape.POSTER -> { iconWidth = NuvioTheme.spacing.xxl; iconHeight = NuvioTheme.spacing.xxxl }
-                com.nuvio.tv.domain.model.PosterShape.LANDSCAPE -> { iconWidth = 64.dp; iconHeight = 36.dp }
-                com.nuvio.tv.domain.model.PosterShape.SQUARE -> { iconWidth = NuvioTheme.spacing.xxxl; iconHeight = NuvioTheme.spacing.xxxl }
+private fun FolderHeader(
+    folder: com.nuvio.tv.domain.model.CollectionFolder,
+    selectedGroupIndex: Int = 0,
+    onSelectGroup: (Int) -> Unit = {}
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = NuvioTheme.spacing.xxxl, vertical = NuvioTheme.spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.lg)
+        ) {
+            if (!folder.coverImageUrl.isNullOrBlank()) {
+                val iconWidth: androidx.compose.ui.unit.Dp
+                val iconHeight: androidx.compose.ui.unit.Dp
+                when (folder.tileShape) {
+                    com.nuvio.tv.domain.model.PosterShape.POSTER -> { iconWidth = NuvioTheme.spacing.xxl; iconHeight = NuvioTheme.spacing.xxxl }
+                    com.nuvio.tv.domain.model.PosterShape.LANDSCAPE -> { iconWidth = 64.dp; iconHeight = 36.dp }
+                    com.nuvio.tv.domain.model.PosterShape.SQUARE -> { iconWidth = NuvioTheme.spacing.xxxl; iconHeight = NuvioTheme.spacing.xxxl }
+                }
+                AsyncImage(
+                    model = folder.coverImageUrl,
+                    contentDescription = folder.title,
+                    modifier = Modifier
+                        .width(iconWidth)
+                        .height(iconHeight)
+                        .clip(RoundedCornerShape(NuvioTheme.radii.sm)),
+                    contentScale = ContentScale.FillBounds
+                )
+            } else if (!folder.coverEmoji.isNullOrBlank()) {
+                Text(
+                    text = folder.coverEmoji,
+                    style = MaterialTheme.typography.headlineLarge
+                )
             }
-            AsyncImage(
-                model = folder.coverImageUrl,
-                contentDescription = folder.title,
-                modifier = Modifier
-                    .width(iconWidth)
-                    .height(iconHeight)
-                    .clip(RoundedCornerShape(NuvioTheme.radii.sm)),
-                contentScale = ContentScale.FillBounds
-            )
-        } else if (!folder.coverEmoji.isNullOrBlank()) {
             Text(
-                text = folder.coverEmoji,
-                style = MaterialTheme.typography.headlineLarge
+                text = folder.title,
+                style = MaterialTheme.typography.headlineMedium,
+                color = NuvioTheme.colors.TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
-        Text(
-            text = folder.title,
-            style = MaterialTheme.typography.headlineMedium,
-            color = NuvioTheme.colors.TextPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+
+        if (folder.groups.size > 1) {
+            val safeSelected = selectedGroupIndex.coerceIn(folder.groups.indices)
+            TabRow(
+                selectedTabIndex = safeSelected,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = NuvioTheme.spacing.xxxl)
+            ) {
+                folder.groups.forEachIndexed { index, group ->
+                    Tab(
+                        selected = index == safeSelected,
+                        onFocus = { onSelectGroup(index) },
+                        onClick = { onSelectGroup(index) }
+                    ) {
+                        Text(
+                            text = group.title,
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(
+                                horizontal = NuvioTheme.spacing.xl,
+                                vertical = NuvioTheme.spacing.md
+                            )
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(NuvioTheme.spacing.sm))
+        }
     }
 }
 

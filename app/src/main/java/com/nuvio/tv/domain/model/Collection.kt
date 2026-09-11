@@ -117,6 +117,13 @@ data class TmdbCollectionFilters(
 )
 
 @Immutable
+data class CollectionFolderGroup(
+    val id: String,
+    val title: String,
+    val sources: List<CollectionSource> = emptyList()
+)
+
+@Immutable
 data class CollectionFolder(
     val id: String,
     val title: String,
@@ -127,6 +134,7 @@ data class CollectionFolder(
     val tileShape: PosterShape = PosterShape.SQUARE,
     val hideTitle: Boolean = false,
     val sources: List<CollectionSource> = emptyList(),
+    val groups: List<CollectionFolderGroup> = emptyList(),
     val heroBackdropUrl: String? = null,
     val heroVideoUrl: String? = null,
     val titleLogoUrl: String? = null
