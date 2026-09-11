@@ -1,0 +1,185 @@
+name: Apply RZ Collections V2
+
+on:
+  push:
+    branches:
+      - rz-collections-tabs
+    paths:
+      - .github/workflows/apply-rz-collections-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-v2:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v5
+        with:
+          ref: rz-collections-tabs
+          fetch-depth: 0
+
+      - name: Apply Collections V2
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          ROOT = Path.cwd()
+
+          def read(rel: str) -> str:
+              p = ROOT / rel
+              if not p.exists():
+                  raise SystemExit(f"Missing expected file: {rel}")
+              return p.read_text(encoding="utf-8")
+
+          def write(rel: str, text: str) -> None:
+              (ROOT / rel).write_text(text, encoding="utf-8")
+              print(f"updated {rel}")
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"Anchor mismatch [{label}]: expected 1 occurrence, found {count}")
+              return text.replace(old, new, 1)
+
+          def replace_between(text: str, start: str, end: str, new_block: str, label: str) -> str:
+              a = text.find(start)
+              if a < 0:
+                  raise SystemExit(f"Start anchor not found [{label}]")
+              b = text.find(end, a)
+              if b < 0:
+                  raise SystemExit(f"End anchor not found [{label}]")
+              return text[:a] + new_block + text[b:]
+
+          # ------------------------------------------------------------------
+          # 1) HOME: one card per whole collection.
+          #    The first native folder is only the Home/deeplink representative.
+          #    Its title is replaced on the Home-only copy by the collection title.
+          # ------------------------------------------------------------------
+          rel = "app/src/main/java/com/nuvio/tv/ui/screens/home/HomeViewModelCatalogPipeline.kt"
+          s = read(rel)
+
+          home_helper_anchor = '''\n@OptIn(FlowPreview::class)\ninternal fun HomeViewModel.observeCollectionsPipeline() {\n'''
+          home_helper = '''\nprivate fun Collection.asHomeCollectionCard(): Collection {\n    val firstFolder = folders.firstOrNull() ?: return this\n    return copy(\n        folders = listOf(\n            firstFolder.copy(\n                title = title,\n                hideTitle = false\n            )\n        )\n    )\n}\n\n@OptIn(FlowPreview::class)\ninternal fun HomeViewModel.observeCollectionsPipeline() {\n'''
+          s = replace_once(s, home_helper_anchor, home_helper, "home collection helper")
+          s = replace_once(
+              s,
+              "add(HomeRow.CollectionRow(collection))",
+              "add(HomeRow.CollectionRow(collection.asHomeCollectionCard()))",
+              "pinned collection card"
+          )
+          s = replace_once(
+              s,
+              "add(HomeRow.CollectionRow(collectionEntry))",
+              "add(HomeRow.CollectionRow(collectionEntry.asHomeCollectionCard()))",
+              "ordered collection card"
+          )
+          write(rel, s)
+
+          # ------------------------------------------------------------------
+          # 2) DETAIL VM: native collection folders become the top level selector.
+          #    Existing folder.sources remain untouched, so the built-in editor works.
+          # ------------------------------------------------------------------
+          rel = "app/src/main/java/com/nuvio/tv/ui/screens/collection/FolderDetailViewModel.kt"
+          s = read(rel)
+
+          s = replace_once(
+              s,
+              '''    val tabs: List<FolderTab> = emptyList(),\n    val selectedTabIndex: Int = 0,\n    val selectedGroupIndex: Int = 0,\n''',
+              '''    val tabs: List<FolderTab> = emptyList(),\n    val selectedTabIndex: Int = 0,\n    val collectionFolders: List<CollectionFolder> = emptyList(),\n    val selectedFolderIndex: Int = 0,\n''',
+              "folder ui state"
+          )
+          s = replace_once(
+              s,
+              "    private var requestedGroupIndex: Int = 0\n",
+              "    private var requestedFolderIndex: Int? = null\n",
+              "requested folder index"
+          )
+
+          s = replace_between(
+              s,
+              "    private val hasAllTab: Boolean\n",
+              "    private fun loadFolder() {\n",
+              '''    private val hasAllTab: Boolean\n        get() {\n            val state = _uiState.value\n            val folder = state.folder ?: return false\n            return state.tabs.firstOrNull()?.isAllTab == true && folder.sources.size >= 2\n        }\n\n''',
+              "hasAllTab"
+          )
+
+          s = replace_between(
+              s,
+              "            val collection = collections.find { it.id == collectionId }\n",
+              "            val addons = addonRepository.getInstalledAddons().first().enabledAddons()\n",
+              '''            val collection = collections.find { it.id == collectionId }\n            val collectionFolders = collection?.folders.orEmpty()\n            val routeFolderIndex = collectionFolders.indexOfFirst { it.id == folderId }\n                .takeIf { it >= 0 } ?: 0\n            val activeFolderIndex = if (collectionFolders.isEmpty()) {\n                0\n            } else {\n                (requestedFolderIndex ?: routeFolderIndex).coerceIn(collectionFolders.indices)\n            }\n            requestedFolderIndex = activeFolderIndex\n            val folder = collectionFolders.getOrNull(activeFolderIndex)\n\n            if (folder == null || folder.sources.isEmpty()) {\n                _uiState.update {\n                    it.copy(\n                        folder = folder,\n                        collectionTitle = collection?.title ?: "",\n                        collectionFolders = collectionFolders,\n                        selectedFolderIndex = activeFolderIndex,\n                        viewMode = collection?.viewMode ?: FolderViewMode.TABBED_GRID,\n                        isLoading = false\n                    )\n                }\n                return@launch\n            }\n\n            val activeSources = folder.sources\n\n''',
+              "native collection folder selection"
+          )
+
+          s = replace_once(
+              s,
+              '''                    tabs = tabs,\n                    selectedTabIndex = 0,\n                    selectedGroupIndex = activeGroupIndex,\n                    isLoading = false\n''',
+              '''                    tabs = tabs,\n                    selectedTabIndex = 0,\n                    collectionFolders = collectionFolders,\n                    selectedFolderIndex = activeFolderIndex,\n                    isLoading = false\n''',
+              "selected native folder state"
+          )
+
+          s = replace_between(
+              s,
+              "    fun selectGroup(index: Int) {\n",
+              "    fun selectTab(index: Int) {\n",
+              '''    fun selectCollectionFolder(index: Int) {\n        val state = _uiState.value\n        if (state.collectionFolders.isEmpty()) return\n        val normalized = index.coerceIn(state.collectionFolders.indices)\n        if (normalized == state.selectedFolderIndex && state.tabs.isNotEmpty()) return\n\n        requestedFolderIndex = normalized\n        _rowsFocusState.value = com.nuvio.tv.ui.screens.home.HomeScreenFocusState()\n        _followLayoutFocusState.value = com.nuvio.tv.ui.screens.home.HomeScreenFocusState()\n        _tabFocusStates.value = emptyMap()\n        _uiState.update {\n            it.copy(\n                selectedFolderIndex = normalized,\n                selectedTabIndex = 0,\n                tabs = emptyList(),\n                followLayoutHomeState = null,\n                isLoading = true\n            )\n        }\n        loadFolder()\n    }\n\n''',
+              "select native collection folder"
+          )
+
+          for forbidden in ("selectedGroupIndex", "requestedGroupIndex", "folder.groups", "selectGroup("):
+              if forbidden in s:
+                  raise SystemExit(f"V1 group code remained in FolderDetailViewModel: {forbidden}")
+          write(rel, s)
+
+          # ------------------------------------------------------------------
+          # 3) DETAIL SCREEN: FILMY | SERIÁLY (native folders) above every
+          #    original Nuvio mode: TABBED_GRID / ROWS / FOLLOW_LAYOUT.
+          # ------------------------------------------------------------------
+          rel = "app/src/main/java/com/nuvio/tv/ui/screens/collection/FolderDetailScreen.kt"
+          s = read(rel)
+
+          if "import androidx.compose.foundation.layout.weight\n" not in s:
+              s = replace_once(
+                  s,
+                  "import androidx.compose.foundation.layout.widthIn\n",
+                  "import androidx.compose.foundation.layout.widthIn\nimport androidx.compose.foundation.layout.weight\n",
+                  "weight import"
+              )
+
+          main_start = "    if (uiState.viewMode == FolderViewMode.FOLLOW_LAYOUT) {\n"
+          main_end = "    val posterOptionsState by viewModel.posterOptions.state.collectAsStateWithLifecycle()\n"
+          new_main = '''    Column(\n        modifier = Modifier\n            .fillMaxSize()\n            .padding(top = NuvioTheme.spacing.xl)\n    ) {\n        CollectionFolderTabs(\n            collectionTitle = uiState.collectionTitle,\n            folders = uiState.collectionFolders,\n            selectedFolderIndex = uiState.selectedFolderIndex,\n            onSelectFolder = viewModel::selectCollectionFolder\n        )\n\n        Box(\n            modifier = Modifier\n                .fillMaxWidth()\n                .weight(1f)\n        ) {\n            when (uiState.viewMode) {\n                FolderViewMode.TABBED_GRID -> TabbedGridContent(\n                    uiState = uiState,\n                    folder = folder,\n                    tabFocusState = tabFocusStates[uiState.selectedTabIndex] ?: FolderDetailGridFocusState(),\n                    onSelectTab = viewModel::selectTab,\n                    onNavigateToDetail = onNavigateToDetail,\n                    isItemWatched = isItemWatched,\n                    onLoadMore = { viewModel.loadMoreItems(uiState.selectedTabIndex) },\n                    onSaveFocusState = { verticalIndex, verticalOffset, focusedItemKey ->\n                        viewModel.saveTabFocusState(\n                            tabIndex = uiState.selectedTabIndex,\n                            verticalScrollIndex = verticalIndex,\n                            verticalScrollOffset = verticalOffset,\n                            focusedItemKey = focusedItemKey\n                        )\n                    },\n                    onItemLongPress = { item, addonBaseUrl ->\n                        viewModel.posterOptions.show(item, addonBaseUrl)\n                    }\n                )\n\n                FolderViewMode.ROWS -> Column(modifier = Modifier.fillMaxSize()) {\n                    FolderHeader(folder = folder)\n                    RowsContent(\n                        uiState = uiState,\n                        focusState = rowsFocusState,\n                        onNavigateToDetail = onNavigateToDetail,\n                        isItemWatched = isItemWatched,\n                        onLoadMoreCatalog = viewModel::loadMoreForCatalog,\n                        onSaveFocusState = { vi, vo, rk, ikm, m, ri, ii ->\n                            viewModel.saveRowsFocusState(vi, vo, rk, ikm, m, ri, ii)\n                        },\n                        onItemFocus = viewModel::onItemFocused,\n                        onItemLongPress = { item, addonBaseUrl ->\n                            viewModel.posterOptions.show(item, addonBaseUrl)\n                        }\n                    )\n                }\n\n                FolderViewMode.FOLLOW_LAYOUT -> FollowLayoutContent(\n                    uiState = uiState,\n                    focusState = followLayoutFocusState,\n                    enrichingItemId = enrichingItemId,\n                    enrichedPreviews = enrichedPreviews,\n                    failedEnrichmentIds = failedEnrichmentIds,\n                    onNavigateToDetail = onNavigateToDetail,\n                    onLoadMoreCatalog = viewModel::loadMoreForCatalog,\n                    onSelectTab = viewModel::selectTab,\n                    onLoadMoreForSelectedTab = { viewModel.loadMoreItems(viewModel.uiState.value.selectedTabIndex) },\n                    onSaveFocusState = { vi, vo, rk, ikm, m, ri, ii ->\n                        viewModel.saveFollowLayoutFocusState(vi, vo, rk, ikm, m, ri, ii)\n                    },\n                    onItemFocus = viewModel::onItemFocused,\n                    onPreloadAdjacentItem = viewModel::preloadAdjacentItem,\n                    onCatalogItemLongPress = { item, addonBaseUrl ->\n                        viewModel.posterOptions.show(item, addonBaseUrl)\n                    },\n                    trailerPreviewUrls = trailerPreviewUrls,\n                    trailerPreviewAudioUrls = trailerPreviewAudioUrls,\n                    onRequestTrailerPreview = viewModel::requestTrailerPreview,\n                    scrollToTopTrigger = scrollToTopTrigger\n                )\n            }\n        }\n    }\n\n'''
+          s = replace_between(s, main_start, main_end, new_main, "main detail layout")
+
+          header_start = "@Composable\nprivate fun FolderHeader(\n"
+          header_end = "@OptIn(ExperimentalTvMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)\n@Composable\nprivate fun TabbedGridContent"
+          new_headers = '''@Composable\nprivate fun CollectionFolderTabs(\n    collectionTitle: String,\n    folders: List<com.nuvio.tv.domain.model.CollectionFolder>,\n    selectedFolderIndex: Int,\n    onSelectFolder: (Int) -> Unit\n) {\n    Column(modifier = Modifier.fillMaxWidth()) {\n        Text(\n            text = collectionTitle,\n            style = MaterialTheme.typography.headlineMedium,\n            color = NuvioTheme.colors.TextPrimary,\n            maxLines = 1,\n            overflow = TextOverflow.Ellipsis,\n            modifier = Modifier.padding(\n                start = NuvioTheme.spacing.xxxl,\n                end = NuvioTheme.spacing.xxxl,\n                bottom = NuvioTheme.spacing.sm\n            )\n        )\n\n        if (folders.size > 1) {\n            val safeSelected = selectedFolderIndex.coerceIn(folders.indices)\n            TabRow(\n                selectedTabIndex = safeSelected,\n                modifier = Modifier\n                    .fillMaxWidth()\n                    .padding(horizontal = NuvioTheme.spacing.xxxl)\n            ) {\n                folders.forEachIndexed { index, collectionFolder ->\n                    Tab(\n                        selected = index == safeSelected,\n                        onFocus = { onSelectFolder(index) },\n                        onClick = { onSelectFolder(index) }\n                    ) {\n                        Text(\n                            text = collectionFolder.title,\n                            style = MaterialTheme.typography.labelLarge,\n                            modifier = Modifier.padding(\n                                horizontal = NuvioTheme.spacing.xl,\n                                vertical = NuvioTheme.spacing.md\n                            )\n                        )\n                    }\n                }\n            }\n            Spacer(modifier = Modifier.height(NuvioTheme.spacing.sm))\n        }\n    }\n}\n\n@Composable\nprivate fun FolderHeader(\n    folder: com.nuvio.tv.domain.model.CollectionFolder\n) {\n    Row(\n        modifier = Modifier\n            .fillMaxWidth()\n            .padding(horizontal = NuvioTheme.spacing.xxxl, vertical = NuvioTheme.spacing.sm),\n        verticalAlignment = Alignment.CenterVertically,\n        horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.lg)\n    ) {\n        if (!folder.coverImageUrl.isNullOrBlank()) {\n            val iconWidth: androidx.compose.ui.unit.Dp\n            val iconHeight: androidx.compose.ui.unit.Dp\n            when (folder.tileShape) {\n                com.nuvio.tv.domain.model.PosterShape.POSTER -> { iconWidth = NuvioTheme.spacing.xxl; iconHeight = NuvioTheme.spacing.xxxl }\n                com.nuvio.tv.domain.model.PosterShape.LANDSCAPE -> { iconWidth = 64.dp; iconHeight = 36.dp }\n                com.nuvio.tv.domain.model.PosterShape.SQUARE -> { iconWidth = NuvioTheme.spacing.xxxl; iconHeight = NuvioTheme.spacing.xxxl }\n            }\n            AsyncImage(\n                model = folder.coverImageUrl,\n                contentDescription = folder.title,\n                modifier = Modifier\n                    .width(iconWidth)\n                    .height(iconHeight)\n                    .clip(RoundedCornerShape(NuvioTheme.radii.sm)),\n                contentScale = ContentScale.FillBounds\n            )\n        } else if (!folder.coverEmoji.isNullOrBlank()) {\n            Text(\n                text = folder.coverEmoji,\n                style = MaterialTheme.typography.headlineLarge\n            )\n        }\n        Text(\n            text = folder.title,\n            style = MaterialTheme.typography.headlineMedium,\n            color = NuvioTheme.colors.TextPrimary,\n            maxLines = 1,\n            overflow = TextOverflow.Ellipsis\n        )\n    }\n}\n\n'''
+          s = replace_between(s, header_start, header_end, new_headers, "folder headers")
+
+          for forbidden in ("selectedGroupIndex", "onSelectGroup", "folder.groups", "selectGroup"):
+              if forbidden in s:
+                  raise SystemExit(f"V1 group UI remained in FolderDetailScreen: {forbidden}")
+          write(rel, s)
+
+          print("Collections V2 patch applied successfully")
+          PY
+
+      - name: Verify patch formatting
+        run: git diff --check
+
+      - name: Commit V2 and remove one-time workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-rz-collections-v2.yml
+          git add \
+            app/src/main/java/com/nuvio/tv/ui/screens/home/HomeViewModelCatalogPipeline.kt \
+            app/src/main/java/com/nuvio/tv/ui/screens/collection/FolderDetailViewModel.kt \
+            app/src/main/java/com/nuvio/tv/ui/screens/collection/FolderDetailScreen.kt
+          git commit -m "Rework collections to native folder tabs"
+          git push origin HEAD:rz-collections-tabs
