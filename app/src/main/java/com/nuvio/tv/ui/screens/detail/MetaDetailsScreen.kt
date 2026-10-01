@@ -478,6 +478,7 @@ fun MetaDetailsScreen(
                     librarySourceMode = uiState.librarySourceMode,
                     nextToWatch = uiState.nextToWatch,
                     episodeProgressMap = uiState.episodeProgressMap,
+                    wsEpisodeBadges = uiState.wsEpisodeBadges,
                     watchedEpisodes = uiState.watchedEpisodes,
                     episodeWatchedPendingKeys = uiState.episodeWatchedPendingKeys,
                     blurUnwatchedEpisodes = uiState.blurUnwatchedEpisodes,
@@ -851,6 +852,7 @@ private fun MetaDetailsContent(
     librarySourceMode: LibrarySourceMode,
     nextToWatch: NextToWatch?,
     episodeProgressMap: Map<Pair<Int, Int>, WatchProgress>,
+    wsEpisodeBadges: Map<Pair<Int, Int>, Boolean>,
     watchedEpisodes: Set<Pair<Int, Int>>,
     episodeWatchedPendingKeys: Set<String>,
     blurUnwatchedEpisodes: Boolean,
@@ -1719,6 +1721,7 @@ private fun MetaDetailsContent(
                         EpisodesRow(
                             episodes = episodesForSeason,
                             episodeProgressMap = episodeProgressMap,
+                            wsEpisodeBadges = wsEpisodeBadges,
                             episodeRatings = episodeImdbRatings,
                             watchedEpisodes = watchedEpisodes,
                             episodeWatchedPendingKeys = episodeWatchedPendingKeys,
