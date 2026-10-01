@@ -1,5 +1,6 @@
 package com.nuvio.tv.ui.screens.detail
 
+import com.nuvio.tv.data.webshare.WsEpisodeStatusService
 import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -77,6 +78,7 @@ private const val TAG = "MetaDetailsViewModel"
 class MetaDetailsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val metaRepository: MetaRepository,
+    private val wsEpisodeStatusService: WsEpisodeStatusService,
     private val tmdbSettingsDataStore: TmdbSettingsDataStore,
     private val tmdbService: TmdbService,
     private val tmdbMetadataService: TmdbMetadataService,
@@ -881,6 +883,10 @@ class MetaDetailsViewModel @Inject constructor(
             initialNextToWatch = cachedNextToWatch
         )
 
+        // Apply the WS availability layer only after the normal meta provider
+        // and TMDB enrichment have finished. This keeps it provider-independent.
+        loadWsEpisodeBadges(enriched)
+
         val contentId = _effectiveContentId.value
 
         // Wait for remote progress provider (Simkl/Trakt) to finish initial load.
@@ -906,6 +912,47 @@ class MetaDetailsViewModel @Inject constructor(
         // Episode ratings and MDBList are independent — launch both without waiting.
         loadEpisodeRatingsAsync(enriched)
         viewModelScope.launch { loadMDBListRatings(enriched) }
+    }
+
+    private fun loadWsEpisodeBadges(meta: Meta) {
+        val isSeries = meta.apiType.equals("series", ignoreCase = true) ||
+            meta.apiType.equals("tv", ignoreCase = true)
+        val hasNumberedEpisodes = meta.videos.any { it.season != null && it.episode != null }
+
+        if (!isSeries || !hasNumberedEpisodes) {
+            _uiState.update { state ->
+                if (state.meta?.id == meta.id) state.copy(wsEpisodeBadges = emptyMap()) else state
+            }
+            return
+        }
+
+        val targetMetaId = meta.id
+        val candidateIds = listOf(
+            meta.id,
+            _effectiveContentId.value,
+            itemId
+        )
+
+        // Clear any stale result immediately; the badge request itself is optional
+        // and must never block the detail screen.
+        _uiState.update { state ->
+            if (state.meta?.id == targetMetaId) {
+                state.copy(wsEpisodeBadges = emptyMap())
+            } else {
+                state
+            }
+        }
+
+        viewModelScope.launch {
+            val badges = wsEpisodeStatusService.fetchEpisodeFlags(candidateIds)
+            _uiState.update { state ->
+                if (state.meta?.id == targetMetaId) {
+                    state.copy(wsEpisodeBadges = badges)
+                } else {
+                    state
+                }
+            }
+        }
     }
 
     private fun NextToWatch.resolveForMeta(meta: Meta): NextToWatch? {
