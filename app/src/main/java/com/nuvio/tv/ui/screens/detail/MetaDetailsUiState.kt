@@ -32,6 +32,8 @@ data class MetaDetailsUiState(
     val isInLibrary: Boolean = false,
     val nextToWatch: NextToWatch? = null,
     val episodeProgressMap: Map<Pair<Int, Int>, WatchProgress> = emptyMap(),
+    // Presence means the episode exists on WebShare; true means it is NEW.
+    val wsEpisodeBadges: Map<Pair<Int, Int>, Boolean> = emptyMap(),
     val trailerUrl: String? = null,
     val trailerAudioUrl: String? = null,
     val isTrailerPlaying: Boolean = false,
