@@ -255,6 +255,7 @@ fun SeasonTabs(
 fun EpisodesRow(
     episodes: List<Video>,
     episodeProgressMap: Map<Pair<Int, Int>, com.nuvio.tv.domain.model.WatchProgress> = emptyMap(),
+    wsEpisodeBadges: Map<Pair<Int, Int>, Boolean> = emptyMap(),
     episodeRatings: Map<Pair<Int, Int>, Double> = emptyMap(),
     watchedEpisodes: Set<Pair<Int, Int>> = emptySet(),
     episodeWatchedPendingKeys: Set<String> = emptySet(),
@@ -370,6 +371,7 @@ fun EpisodesRow(
         ) { episode ->
             val seasonEp = remember(episode.season, episode.episode) { episode.season?.let { s -> episode.episode?.let { e -> s to e } } }
             val progress = remember(seasonEp, episodeProgressMap) { seasonEp?.let { episodeProgressMap[it] } }
+            val wsBadgeIsNew = remember(seasonEp, wsEpisodeBadges) { seasonEp?.let { wsEpisodeBadges[it] } }
             val imdbRating = remember(seasonEp, episodeRatings) { seasonEp?.let { episodeRatings[it] } }
             val isMarkedWatched = remember(seasonEp, watchedEpisodes) { seasonEp?.let { watchedEpisodes.contains(it) } ?: false }
             val episodeFocusRequester = remember(episode.id) { episodeFocusRequesters.getOrPut(episode.id) { FocusRequester() } }
@@ -383,6 +385,7 @@ fun EpisodesRow(
             EpisodeCard(
                 episode = episode,
                 watchProgress = progress,
+                wsBadgeIsNew = wsBadgeIsNew,
                 imdbRating = imdbRating,
                 isMarkedWatched = isMarkedWatched,
                 blurUnwatched = blurUnwatchedEpisodes,
@@ -469,6 +472,7 @@ fun EpisodesRow(
 private fun EpisodeCard(
     episode: Video,
     watchProgress: com.nuvio.tv.domain.model.WatchProgress? = null,
+    wsBadgeIsNew: Boolean? = null,
     imdbRating: Double? = null,
     isMarkedWatched: Boolean = false,
     blurUnwatched: Boolean = false,
@@ -738,22 +742,51 @@ private fun EpisodeCard(
                     ),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .background(
-                            color = badgeBgColor,
-                            shape = badgeShape
-                        )
-                        .padding(
-                            horizontal = cardMetrics.episodeBadgeHorizontalPadding,
-                            vertical = cardMetrics.episodeBadgeVerticalPadding
-                        )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = episodeCode,
-                        style = episodeBadgeStyle,
-                        maxLines = 1
-                    )
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                color = badgeBgColor,
+                                shape = badgeShape
+                            )
+                            .padding(
+                                horizontal = cardMetrics.episodeBadgeHorizontalPadding,
+                                vertical = cardMetrics.episodeBadgeVerticalPadding
+                            )
+                    ) {
+                        Text(
+                            text = episodeCode,
+                            style = episodeBadgeStyle,
+                            maxLines = 1
+                        )
+                    }
+
+                    if (wsBadgeIsNew != null) {
+                        Box(
+                            modifier = Modifier
+                                .background(
+                                    color = if (wsBadgeIsNew) {
+                                        primaryColor.copy(alpha = 0.92f)
+                                    } else {
+                                        badgeBgColor
+                                    },
+                                    shape = badgeShape
+                                )
+                                .padding(
+                                    horizontal = cardMetrics.episodeBadgeHorizontalPadding,
+                                    vertical = cardMetrics.episodeBadgeVerticalPadding
+                                )
+                        ) {
+                            Text(
+                                text = if (wsBadgeIsNew) "🆕 NEW" else "🕸️ WS",
+                                style = episodeBadgeStyle,
+                                maxLines = 1
+                            )
+                        }
+                    }
                 }
 
                 FocusMarqueeText(
